@@ -14,9 +14,9 @@ model Service {
   slug            String   @unique
   category        String
   shortDesc       String
-  detailDesc      String
-  price           Int
-  priceMax        Int
+  detailDesc      String   @default("")
+  price           Int      @default(0)
+  priceMax        Int      @default(0)
   benefit1        String   @default("")
   benefit2        String   @default("")
   benefit3        String   @default("")
@@ -36,8 +36,10 @@ model Service {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   landingPage     LandingPage?
-  testimonials   Testimonial[]
-  images         ServiceImage[]
+  testimonials    Testimonial[]
+  images          ServiceImage[]
+  bookings        Booking[]
+  faqs            FAQ[]
 }
 
 model Article {
@@ -69,7 +71,7 @@ model Testimonial {
   id          String   @id @default(cuid())
   serviceId   String
   name        String
-  location    String
+  location    String   @default("")
   photoUrl    String   @default("")
   rating      Int      @default(5)
   text        String
@@ -105,4 +107,29 @@ model SiteConfig {
   value       String   @default("")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt()
+}
+
+model Booking {
+  id            String   @id @default(cuid())
+  serviceId     String
+  customerName  String   @default("")
+  customerPhone String   @default("")
+  customerEmail String   @default("")
+  message       String   @default("")
+  status        String   @default("pending")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  service       Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+}
+
+model FAQ {
+  id          String   @id @default(cuid())
+  serviceId   String?
+  question    String
+  answer      String
+  category    String   @default("")
+  order       Int      @default(0)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  service     Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
 }
