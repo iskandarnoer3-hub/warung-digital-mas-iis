@@ -1,0 +1,107 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:../db/custom.db"
+}
+
+model Service {
+  id              String   @id @default(cuid())
+  name            String
+  slug            String   @unique
+  category        String
+  shortDesc       String
+  detailDesc      String
+  price           Int
+  priceMax        Int
+  benefit1        String   @default("")
+  benefit2        String   @default("")
+  benefit3        String   @default("")
+  benefit4        String   @default("")
+  benefit5        String   @default("")
+  waText          String   @default("")
+  imageUrl        String   @default("")
+  heroImageUrl    String   @default("")
+  videoUrl        String   @default("")
+  audioUrl        String   @default("")
+  externalLink    String   @default("")
+  bonus           String   @default("")
+  slotStatus      String   @default("Slot Tersedia")
+  slotAvailable   Boolean  @default(true)
+  active          Boolean  @default(true)
+  order           Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  landingPage     LandingPage?
+  testimonials   Testimonial[]
+  images         ServiceImage[]
+}
+
+model Article {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  excerpt     String   @default("")
+  content     String   @default("")
+  imageUrl    String   @default("")
+  published   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model LandingPage {
+  id          String   @id @default(cuid())
+  serviceId   String   @unique
+  headline    String   @default("")
+  subheadline String   @default("")
+  ctaText     String   @default("Hubungi Sekarang")
+  sections    String   @default("[]")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  service     Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+}
+
+model Testimonial {
+  id          String   @id @default(cuid())
+  serviceId   String
+  name        String
+  location    String
+  photoUrl    String   @default("")
+  rating      Int      @default(5)
+  text        String
+  audioUrl    String   @default("")
+  order       Int      @default(0)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  service     Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+}
+
+model ChatLog {
+  id          String   @id @default(cuid())
+  sessionId   String
+  role        String
+  message     String
+  createdAt   DateTime @default(now())
+}
+
+model ServiceImage {
+  id          String   @id @default(cuid())
+  serviceId   String
+  url         String
+  caption     String   @default("")
+  type        String   @default("gallery")
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  service     Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+}
+
+model SiteConfig {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt()
+}
