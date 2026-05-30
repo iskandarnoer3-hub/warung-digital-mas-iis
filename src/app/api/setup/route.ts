@@ -349,29 +349,6 @@ const SERVICES = [
 
 export async function GET() {
   try {
-    // First, run migration: rename old "Paket Belajar A, B, C" to new name
-    const oldService = await db.service.findFirst({ where: { slug: 'paket-belajar-abc' } })
-    if (oldService) {
-      await db.service.update({
-        where: { id: oldService.id },
-        data: {
-          name: 'LES dan Privat Pelajaran SD dan TK',
-          slug: 'les-privat-pelajaran-sd-tk',
-          shortDesc: 'Bimbingan belajar privat untuk anak SD dan TK dengan pendekatan menyenangkan',
-          detailDesc: 'LES dan privat pelajaran untuk anak SD (kelas 1-6) dan TK. Pendekatan belajar menyenangkan, materi sesuai kurikulum, evaluasi berkala, dan laporan progress ke orang tua. Privat atau grup kecil.',
-          price: 200000,
-          priceMax: 600000,
-          benefit1: 'Guru Sabar & Menyenangkan',
-          benefit2: 'Materi Sesuai Kurikulum',
-          benefit3: 'Privat atau Grup Kecil',
-          benefit4: 'Laporan Progress ke Orang Tua',
-          benefit5: 'Evaluasi Berkala',
-          waText: 'Halo Mas Iis, saya mau daftar les privat SD/TK',
-          bonus: 'Free tes minat bakat anak',
-        },
-      })
-    }
-
     // Check if already seeded
     const existingCount = await db.service.count()
 
