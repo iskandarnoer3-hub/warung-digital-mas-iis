@@ -1,18 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { writeFile, mkdir } from 'fs/promises'
-import { existsSync } from 'fs'
-import path from 'path'
 
 // Force dynamic
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-// Vercel has read-only filesystem EXCEPT for /tmp
-// For persistent storage on Vercel, use Supabase Storage / S3 / Vercel Blob
-// This endpoint saves to /tmp (ephemeral) - works for preview but not persistent
-// For production, integrate with Vercel Blob or Supabase Storage
+// =====================================================
+// UPLOAD STRATEGY: Base64 Data URL
+// =====================================================
+// Masalah sebelumnya: file ditulis ke /tmp/uploads/... tapi
+// Next.js TIDAK menyajikan file dari /tmp (hanya /public/),
+// dan di Vercel /tmp itu ephemeral (hilang setelah function).
+// Akibatnya: upload "sukses" 200 tapi URL yang dikembalikan
+// (/uploads/...) selalu 404 saat diakses.
+//
+// Solusi: convert file ke base64 data URL langsung.
+// - Tidak butuh filesystem (works di Vercel serverless)
+// - Browser langsung render data URL
+// - Disimpan di DB sebagai string (kolom url)
+// - No external storage (Supabase Blob/Vercel Blob/S3) needed
+// =====================================================
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
+const MAX_FILE_SIZE = 3 * 1024 * 1024 // 3MB (data URL ~1.33x ukuran asli)
 const ALLOWED_TYPES = [
   'image/jpeg',
   'image/png',
@@ -29,12 +37,10 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
     const file = formData.get('file') as File | null
-    const folder = (formData.get('folder') as string) || 'uploads'
-    const subdir = (formData.get('subdir') as string) || ''
 
     if (!file) {
       return NextResponse.json(
-        { success: false, error: 'No file provided' },
+        { success: false, error: 'Tidak ada file yang dipilih' },
         { status: 400 }
       )
     }
@@ -42,65 +48,49 @@ export async function POST(request: NextRequest) {
     // Validate file size
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
-        { success: false, error: `File too large. Max ${MAX_FILE_SIZE / 1024 / 1024}MB` },
+        {
+          success: false,
+          error: `File terlalu besar (${(file.size / 1024 / 1024).toFixed(2)}MB). Maksimal ${MAX_FILE_SIZE / 1024 / 1024}MB`,
+        },
         { status: 400 }
       )
     }
 
     // Validate file type
-    if (!ALLOWED_TYPES.includes(file.type)) {
+    if (!file.type || !ALLOWED_TYPES.includes(file.type)) {
       return NextResponse.json(
-        { success: false, error: `File type ${file.type} not allowed` },
+        { success: false, error: `Tipe file "${file.type || 'unknown'}" tidak didukung` },
         { status: 400 }
       )
     }
 
-    // Sanitize folder name
-    const safeFolder = folder.replace(/[^a-zA-Z0-9-_]/g, '').substring(0, 50)
-    const safeSubdir = subdir.replace(/[^a-zA-Z0-9-_]/g, '').substring(0, 50)
+    // Read file as ArrayBuffer
+    const bytes = await file.arrayBuffer()
+    const buffer = Buffer.from(bytes)
 
-    // Generate unique filename
-    const ext = path.extname(file.name) || mimeToExt(file.type)
+    // Convert to base64 data URL
+    // Format: data:[<mediatype>][;base64],<data>
+    const base64 = buffer.toString('base64')
+    const dataUrl = `data:${file.type};base64,${base64}`
+
+    // Generate a friendly filename for display purposes
+    const ext = path_extname(file.name) || mimeToExt(file.type)
     const timestamp = Date.now()
     const randomStr = Math.random().toString(36).substring(2, 8)
     const filename = `${timestamp}-${randomStr}${ext}`
 
-    // Build path: /tmp/uploads/[folder]/[subdir]/filename
-    // On Vercel, /tmp is writable but ephemeral
-    // For persistent storage, use Vercel Blob or Supabase Storage
-    const uploadDir = path.join(
-      '/tmp',
-      'uploads',
-      safeFolder,
-      safeSubdir
-    ).replace(/\/+$/, '')
-
-    // Create directory
-    if (!existsSync(uploadDir)) {
-      await mkdir(uploadDir, { recursive: true })
-    }
-
-    // Write file
-    const bytes = await file.arrayBuffer()
-    const buffer = Buffer.from(bytes)
-    const filePath = path.join(uploadDir, filename)
-    await writeFile(filePath, buffer)
-
-    // Public URL (this works in dev; in production need external storage)
-    // For now, return a path that can be used to identify the file
-    const publicPath = `/uploads/${safeFolder}/${safeSubdir ? safeSubdir + '/' : ''}${filename}`
-
-    console.log(`[upload] File saved: ${filePath} (${file.size} bytes)`)
+    console.log(`[upload] File converted to data URL: ${file.name} (${file.size} bytes -> ${dataUrl.length} chars)`)
 
     return NextResponse.json({
       success: true,
       data: {
-        url: publicPath,
+        url: dataUrl,           // This is what gets saved to DB and rendered in <img src="...">
         filename,
+        originalName: file.name,
         size: file.size,
         type: file.type,
-        folder: safeFolder,
-        path: filePath,
+        // Indicate storage method for debugging
+        storage: 'data-url',
       },
     })
   } catch (error) {
@@ -108,11 +98,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : 'Upload failed',
+        error: error instanceof Error ? error.message : 'Upload gagal',
       },
       { status: 500 }
     )
   }
+}
+
+// Helper: get extension from filename (inline to avoid importing 'path' just for this)
+function path_extname(name: string): string {
+  const idx = name.lastIndexOf('.')
+  return idx >= 0 ? name.substring(idx) : ''
 }
 
 function mimeToExt(mime: string): string {
@@ -133,8 +129,9 @@ function mimeToExt(mime: string): string {
 export async function GET() {
   return NextResponse.json({
     success: true,
-    message: 'Upload endpoint ready. POST a file (multipart/form-data) with field "file".',
+    message: 'Upload endpoint ready (base64 data URL mode). POST a file (multipart/form-data) with field "file".',
     allowedTypes: ALLOWED_TYPES,
     maxSize: `${MAX_FILE_SIZE / 1024 / 1024}MB`,
+    storage: 'data-url (no filesystem needed, works on Vercel)',
   })
 }
