@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { MessageCircle, Eye, Gift, Monitor, GraduationCap, Shirt, Palette, PartyPopper, Globe, BarChart3, Paintbrush, Rabbit, Wrench, ArrowRight } from 'lucide-react';
+import { FALLBACK_SERVICES } from '@/data/fallback-services';
 
 interface Service {
   id: string;
@@ -124,11 +125,14 @@ export default function ServicesSection({ onSelectService }: Props) {
           const data = json.data ?? json;
           if (Array.isArray(data) && data.length > 0) {
             setServices(data);
+            return;
           }
         }
       } catch {
-        // Use empty, page will show skeleton
+        // API failed, use fallback
       }
+      // Use fallback data when API fails or returns empty
+      setServices(FALLBACK_SERVICES as unknown as Service[]);
     }
     fetchServices();
   }, []);

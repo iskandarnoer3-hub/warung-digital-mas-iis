@@ -1,5 +1,6 @@
-import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
+import { FALLBACK_SERVICES } from '@/data/fallback-services'
+import { getDb, resetDb } from '@/lib/db'
 
 function generateSlug(text: string): string {
   return text
@@ -10,24 +11,52 @@ function generateSlug(text: string): string {
     .replace(/^-|-$/g, '')
 }
 
+// Track DB availability
+let dbAvailable = true
+
+function isPreparedStmtError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return msg.includes('prepared statement') || msg.includes('42P05')
+}
+
 export async function GET() {
-  try {
-    const services = await db.service.findMany({
-      where: { active: true },
-      orderBy: { order: 'asc' },
-      include: { landingPage: true, images: { orderBy: { order: 'asc' } } },
-    })
-    return NextResponse.json({ success: true, data: services })
-  } catch (error) {
-    console.error('Error fetching services:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch services' },
-      { status: 500 }
-    )
+  // Try database first, but always have fallback ready
+  if (dbAvailable) {
+    try {
+      const db = getDb()
+      if (db) {
+        const services = await db.service.findMany({
+          where: { active: true },
+          orderBy: { order: 'asc' },
+          include: { landingPage: true, images: { orderBy: { order: 'asc' } } },
+        })
+        if (services.length > 0) {
+          return NextResponse.json({ success: true, data: services })
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching services from DB, using fallback:', error)
+      if (isPreparedStmtError(error)) {
+        resetDb()
+      }
+      dbAvailable = false
+      setTimeout(() => { dbAvailable = true }, 30000)
+    }
   }
+
+  // Fallback when DB is unavailable
+  return NextResponse.json({ success: true, data: FALLBACK_SERVICES })
 }
 
 export async function POST(request: NextRequest) {
+  const db = getDb()
+  if (!db) {
+    return NextResponse.json(
+      { success: false, error: 'Database unavailable' },
+      { status: 503 }
+    )
+  }
+
   try {
     const body = await request.json()
 

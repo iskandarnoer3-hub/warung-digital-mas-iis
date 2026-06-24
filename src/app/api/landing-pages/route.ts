@@ -1,7 +1,12 @@
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET() {
+  const db = getDb()
+  if (!db) {
+    return NextResponse.json({ success: true, data: [] })
+  }
+
   try {
     const landingPages = await db.landingPage.findMany({
       include: { service: true },
@@ -11,14 +16,19 @@ export async function GET() {
     return NextResponse.json({ success: true, data: landingPages })
   } catch (error) {
     console.error('Error fetching landing pages:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch landing pages' },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: true, data: [] })
   }
 }
 
 export async function POST(request: NextRequest) {
+  const db = getDb()
+  if (!db) {
+    return NextResponse.json(
+      { success: false, error: 'Database unavailable' },
+      { status: 503 }
+    )
+  }
+
   try {
     const body = await request.json()
 

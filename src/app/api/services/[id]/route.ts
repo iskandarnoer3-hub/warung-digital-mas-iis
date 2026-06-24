@@ -1,40 +1,98 @@
-import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
+import { FALLBACK_SERVICES } from '@/data/fallback-services'
+import { getDb, resetDb } from '@/lib/db'
+
+// Track DB availability to avoid repeated connection attempts
+let dbAvailable = true
+
+function isPreparedStmtError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return msg.includes('prepared statement') || msg.includes('42P05')
+}
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const { id } = await params
-    const service = await db.service.findUnique({
-      where: { id },
-      include: { landingPage: true, images: { orderBy: { order: 'asc' } } },
-    })
+  const { id } = await params
 
-    if (!service) {
-      return NextResponse.json(
-        { success: false, error: 'Service not found' },
-        { status: 404 }
-      )
+  // If this is a fallback ID, skip DB entirely - serve from local data
+  if (id.startsWith('fallback-')) {
+    const fallback = FALLBACK_SERVICES.find(s => s.id === id)
+    if (fallback) {
+      return NextResponse.json({ success: true, data: fallback })
     }
-
-    return NextResponse.json({ success: true, data: service })
-  } catch (error) {
-    console.error('Error fetching service:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch service' },
-      { status: 500 }
-    )
   }
+
+  // Try local data first by slug (fast, no DB needed)
+  const localBySlug = FALLBACK_SERVICES.find(s => s.slug === id)
+  if (localBySlug) {
+    return NextResponse.json({ success: true, data: localBySlug })
+  }
+
+  // Try by order number
+  const orderNum = parseInt(id, 10)
+  if (!isNaN(orderNum) && orderNum >= 1 && orderNum <= 17) {
+    const byOrder = FALLBACK_SERVICES.find(s => s.order === orderNum)
+    if (byOrder) {
+      return NextResponse.json({ success: true, data: byOrder })
+    }
+  }
+
+  // Try database for IDs that aren't fallback patterns
+  if (dbAvailable && !id.startsWith('fallback-')) {
+    const db = getDb()
+    if (db) {
+      try {
+        const service = await db.service.findUnique({
+          where: { id },
+          include: { landingPage: true, images: { orderBy: { order: 'asc' } } },
+        })
+
+        if (service) {
+          return NextResponse.json({ success: true, data: service })
+        }
+
+        // Try slug lookup in DB
+        const bySlug = await db.service.findUnique({
+          where: { slug: id },
+          include: { landingPage: true, images: { orderBy: { order: 'asc' } } },
+        })
+
+        if (bySlug) {
+          return NextResponse.json({ success: true, data: bySlug })
+        }
+      } catch (error) {
+        console.error('DB error, using fallback:', error)
+        if (isPreparedStmtError(error)) {
+          resetDb()
+        }
+        dbAvailable = false
+        setTimeout(() => { dbAvailable = true }, 30000)
+      }
+    }
+  }
+
+  return NextResponse.json(
+    { success: false, error: 'Service not found' },
+    { status: 404 }
+  )
 }
 
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
+  const db = getDb()
+  if (!db) {
+    return NextResponse.json(
+      { success: false, error: 'Database unavailable' },
+      { status: 503 }
+    )
+  }
+
   try {
-    const { id } = await params
     const body = await request.json()
 
     const existing = await db.service.findUnique({ where: { id } })
@@ -102,9 +160,16 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const { id } = await params
+  const { id } = await params
+  const db = getDb()
+  if (!db) {
+    return NextResponse.json(
+      { success: false, error: 'Database unavailable' },
+      { status: 503 }
+    )
+  }
 
+  try {
     const existing = await db.service.findUnique({ where: { id } })
     if (!existing) {
       return NextResponse.json(

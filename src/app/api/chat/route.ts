@@ -1,7 +1,7 @@
-import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 import ZAI from 'z-ai-web-dev-sdk'
 import { AI_SYSTEM_PROMPT } from '@/lib/ai-system-prompt'
+import { getDb, resetDb } from '@/lib/db'
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID
@@ -36,6 +36,14 @@ async function sendToTelegram(text: string) {
   }
 }
 
+function isPreparedStmtError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return msg.includes('prepared statement') || msg.includes('42P05')
+}
+
+// Check if database is available
+let dbAvailable = true
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -48,30 +56,44 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Save the user message to ChatLog
-    await db.chatLog.create({
-      data: {
-        sessionId,
-        role: 'user',
-        message,
-      },
-    })
+    // Try to save user message to ChatLog (non-blocking if DB is down)
+    let chatHistory: Array<{ role: string; content: string }> = []
 
-    // Get recent chat history for context (last 10 messages)
-    const chatHistory = await db.chatLog.findMany({
-      where: { sessionId },
-      orderBy: { createdAt: 'desc' },
-      take: 10,
-    })
-    chatHistory.reverse()
+    if (dbAvailable) {
+      try {
+        const db = getDb()
+        if (db) {
+          await db.chatLog.create({
+            data: { sessionId, role: 'user', message },
+          })
 
-    // Build messages for AI (z-ai uses 'assistant' role for system prompt)
+          // Get recent chat history for context (last 10 messages)
+          const history = await db.chatLog.findMany({
+            where: { sessionId },
+            orderBy: { createdAt: 'desc' },
+            take: 10,
+          })
+          history.reverse()
+          chatHistory = history.map((msg) => ({
+            role: msg.role as 'user' | 'assistant',
+            content: msg.message,
+          }))
+        }
+      } catch (dbError) {
+        console.error('DB error (chat will still work):', dbError)
+        if (isPreparedStmtError(dbError)) {
+          resetDb()
+        }
+        dbAvailable = false
+        setTimeout(() => { dbAvailable = true }, 30000)
+      }
+    }
+
+    // Build messages for AI
     const aiMessages: Array<{ role: string; content: string }> = [
       { role: 'assistant', content: AI_SYSTEM_PROMPT },
-      ...chatHistory.map((msg) => ({
-        role: msg.role as 'user' | 'assistant',
-        content: msg.message,
-      })),
+      ...chatHistory,
+      { role: 'user', content: message },
     ]
 
     let reply = ''
@@ -95,16 +117,26 @@ export async function POST(request: NextRequest) {
         'Maaf kak, AI lagi sibuk nih. Langsung WA Mas Iis aja: 0882-0008-58698'
     }
 
-    // Save the assistant reply to ChatLog
-    await db.chatLog.create({
-      data: {
-        sessionId,
-        role: 'assistant',
-        message: reply,
-      },
-    })
+    // Try to save assistant reply (non-blocking if DB is down)
+    if (dbAvailable) {
+      try {
+        const db = getDb()
+        if (db) {
+          await db.chatLog.create({
+            data: { sessionId, role: 'assistant', message: reply },
+          })
+        }
+      } catch (dbError) {
+        console.error('DB save error (non-critical):', dbError)
+        if (isPreparedStmtError(dbError)) {
+          resetDb()
+        }
+        dbAvailable = false
+        setTimeout(() => { dbAvailable = true }, 30000)
+      }
+    }
 
-    // Send notification to Telegram (secret backend backup)
+    // Send notification to Telegram (non-blocking)
     const timestamp = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })
     sendToTelegram(
       `<b>Chat Baru - Mas Iis</b>\n` +

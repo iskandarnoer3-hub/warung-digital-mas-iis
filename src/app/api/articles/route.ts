@@ -1,4 +1,4 @@
-import { db } from '@/lib/db'
+import { getDb, resetDb } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
 function generateSlug(text: string): string {
@@ -10,29 +10,52 @@ function generateSlug(text: string): string {
     .replace(/^-|-$/g, '')
 }
 
+function isPreparedStmtError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return msg.includes('prepared statement') || msg.includes('42P05')
+}
+
 export async function GET(request: NextRequest) {
+  const db = getDb()
+  if (!db) {
+    return NextResponse.json({ success: true, data: [] })
+  }
+
   try {
     const { searchParams } = new URL(request.url)
     const publishedFilter = searchParams.get('published')
 
     const where = publishedFilter === 'true' ? { published: true } : {}
 
-    const articles = await db.article.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-    })
-
-    return NextResponse.json({ success: true, data: articles })
+    try {
+      const articles = await db.article.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+      })
+      return NextResponse.json({ success: true, data: articles })
+    } catch (dbError) {
+      console.error('DB error, returning empty articles:', dbError)
+      if (isPreparedStmtError(dbError)) {
+        resetDb()
+      }
+      // Return empty array when DB is down
+      return NextResponse.json({ success: true, data: [] })
+    }
   } catch (error) {
     console.error('Error fetching articles:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch articles' },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: true, data: [] })
   }
 }
 
 export async function POST(request: NextRequest) {
+  const db = getDb()
+  if (!db) {
+    return NextResponse.json(
+      { success: false, error: 'Database unavailable' },
+      { status: 503 }
+    )
+  }
+
   try {
     const body = await request.json()
 

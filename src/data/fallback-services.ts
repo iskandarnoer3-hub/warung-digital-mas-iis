@@ -1,12 +1,32 @@
-import { getDb } from '@/lib/db'
-import { NextRequest, NextResponse } from 'next/server'
+// Fallback service data - used when database is unreachable
+// This ensures the website always shows all 17 services
 
-// Setup endpoint: seeds the database with all services and data
-// Call: GET /api/setup
-// If force=true query param, it will delete existing data first and re-seed
+export interface FallbackService {
+  id: string;
+  name: string;
+  slug: string;
+  category: string;
+  shortDesc: string;
+  detailDesc: string;
+  price: number;
+  priceMax: number;
+  benefit1: string;
+  benefit2: string;
+  benefit3: string;
+  benefit4: string;
+  benefit5: string;
+  waText: string;
+  imageUrl: string;
+  bonus: string;
+  slotStatus: string;
+  slotAvailable: boolean;
+  active: boolean;
+  order: number;
+}
 
-const SERVICES = [
+export const FALLBACK_SERVICES: FallbackService[] = [
   {
+    id: 'fallback-1',
     name: 'Servis Laptop & MacBook',
     slug: 'servis-laptop-macbook',
     category: 'Elektronik',
@@ -24,9 +44,11 @@ const SERVICES = [
     bonus: 'Free thermal paste',
     slotStatus: 'Slot Tersedia',
     slotAvailable: true,
+    active: true,
     order: 1,
   },
   {
+    id: 'fallback-2',
     name: 'Bimbingan Skripsi/Tesis/Disertasi/Artikel Ilmiah',
     slug: 'bimbingan-skripsi-tesis-disertasi-artikel-ilmiah',
     category: 'Pendidikan',
@@ -44,9 +66,11 @@ const SERVICES = [
     bonus: 'Free cek Turnitin dan AI',
     slotStatus: 'Slot Tersedia',
     slotAvailable: true,
+    active: true,
     order: 2,
   },
   {
+    id: 'fallback-3',
     name: 'Jasa Cek Turnitin & AI',
     slug: 'jasa-cek-turnitin-ai',
     category: 'Pendidikan',
@@ -56,18 +80,20 @@ const SERVICES = [
     priceMax: 150000,
     benefit1: 'Laporan PDF Resmi',
     benefit2: 'Akurat Sama Kampus',
-    benefit3: 'Proses Cepat 1 sampai 24 Jam',
+    benefit3: 'Proses Cepat 1-24 Jam',
     benefit4: 'Deteksi AI dan Plagiarisme',
-    benefit5: 'Privasi Terjaga 100 Persen',
+    benefit5: 'Privasi Terjaga 100%',
     waText: 'Halo Mas Iis, saya mau cek Turnitin dan AI',
     imageUrl: '/services/turnitin.png',
     bonus: 'Free paraphrase 2 halaman',
     slotStatus: 'Slot Tersedia',
     slotAvailable: true,
+    active: true,
     order: 3,
   },
   {
-    name: 'LES dan Privat Pelajaran SD dan TK',
+    id: 'fallback-4',
+    name: 'Les dan Privat Pelajaran SD dan TK',
     slug: 'les-privat-pelajaran-sd-tk',
     category: 'Pendidikan',
     shortDesc: 'Bimbingan belajar privat untuk anak SD dan TK dengan pendekatan menyenangkan',
@@ -84,14 +110,16 @@ const SERVICES = [
     bonus: 'Free tes minat bakat anak',
     slotStatus: 'Slot Tersedia',
     slotAvailable: true,
+    active: true,
     order: 4,
   },
   {
+    id: 'fallback-5',
     name: 'Jasa Jahit Baju Borongan Sekolah',
     slug: 'jasa-jahit-borongan-sekolah',
     category: 'Fashion',
     shortDesc: 'Jahit seragam sekolah borongan, kualitas rapi dan kuat',
-    detailDesc: 'Jasa jahit baju seragam sekolah borongan. Jahitan rapi dan kuat menggunakan mesin industrial. Bisa custom logo bordir dan sablon. Minimum order 20 pcs.',
+    detailDesc: 'Jasa jahit baju seragam sekolah borongan. Jahitan rapi dan kuat menggunakan mesin industrial. Bisa custom logo bordir dan sablon. Minimum order 20 pcs. Bahan bisa dari pelanggan atau kami sediakan.',
     price: 45000,
     priceMax: 150000,
     benefit1: 'Jahitan Rapi dan Kuat',
@@ -104,9 +132,11 @@ const SERVICES = [
     bonus: 'Gratis Sample 1 Pcs',
     slotStatus: 'Slot Tersedia',
     slotAvailable: true,
+    active: true,
     order: 5,
   },
   {
+    id: 'fallback-6',
     name: 'Desain Grafis Profesional',
     slug: 'desain-grafis-profesional',
     category: 'Digital',
@@ -117,16 +147,18 @@ const SERVICES = [
     benefit1: 'Revisi Unlimited Sampai Puas',
     benefit2: 'File Semua Format AI PSD PDF PNG JPG',
     benefit3: 'Desainer Berpengalaman 5+ Tahun',
-    benefit4: 'Proses 1 sampai 3 Hari',
+    benefit4: 'Proses 1-3 Hari',
     benefit5: 'Portfolio Lengkap',
     waText: 'Halo Mas Iis, saya mau jasa desain grafis',
     imageUrl: '/services/desain.png',
     bonus: 'Bonus kartu nama',
     slotStatus: 'Slot Tersedia',
     slotAvailable: true,
+    active: true,
     order: 6,
   },
   {
+    id: 'fallback-7',
     name: 'Jasa Agency Acara Lengkap',
     slug: 'jasa-agency-acara',
     category: 'Event',
@@ -144,9 +176,11 @@ const SERVICES = [
     bonus: 'Free MC Profesional',
     slotStatus: 'Slot Tersedia',
     slotAvailable: true,
+    active: true,
     order: 7,
   },
   {
+    id: 'fallback-8',
     name: 'Jasa MC Profesional',
     slug: 'jasa-mc-profesional',
     category: 'Event',
@@ -164,9 +198,11 @@ const SERVICES = [
     bonus: 'Gratis Susun Rundown',
     slotStatus: 'Slot Tersedia',
     slotAvailable: true,
+    active: true,
     order: 8,
   },
   {
+    id: 'fallback-9',
     name: 'Gambus dan El-Husna Sound System',
     slug: 'gambus-elhusna-sound-system',
     category: 'Event',
@@ -178,15 +214,17 @@ const SERVICES = [
     benefit2: 'Lagu Bisa Request',
     benefit3: 'Free 2 Lagu Tambahan',
     benefit4: 'Operator Berpengalaman',
-    benefit5: 'Paket 1 sampai 3 Hari',
+    benefit5: 'Paket 1-3 Hari',
     waText: 'Halo Mas Iis, saya mau sewa gambus atau el-husna',
     imageUrl: '/services/gambus.png',
     bonus: 'Free 2 lagu tambahan',
     slotStatus: 'Slot Tersedia',
     slotAvailable: true,
+    active: true,
     order: 9,
   },
   {
+    id: 'fallback-10',
     name: 'Jual Beli Kambing Qurban dan Aqiqah',
     slug: 'jual-beli-kambing-qurban',
     category: 'Peternakan',
@@ -204,9 +242,11 @@ const SERVICES = [
     bonus: 'Gratis Sembelih',
     slotStatus: 'Slot Tersedia',
     slotAvailable: true,
+    active: true,
     order: 10,
   },
   {
+    id: 'fallback-11',
     name: 'Website Profil Minimalis',
     slug: 'website-profil-minimalis',
     category: 'IT',
@@ -224,9 +264,11 @@ const SERVICES = [
     bonus: 'Gratis Maintenance 1 Bulan',
     slotStatus: 'Slot Tersedia',
     slotAvailable: true,
+    active: true,
     order: 11,
   },
   {
+    id: 'fallback-12',
     name: 'Konsultan Manajemen Sekolah',
     slug: 'konsultan-manajemen-sekolah',
     category: 'Konsultan',
@@ -244,9 +286,11 @@ const SERVICES = [
     bonus: 'Bonus SOP lengkap',
     slotStatus: 'Slot Tersedia',
     slotAvailable: true,
+    active: true,
     order: 12,
   },
   {
+    id: 'fallback-13',
     name: 'CEO Copywriting',
     slug: 'ceo-copywriting',
     category: 'Digital',
@@ -264,29 +308,33 @@ const SERVICES = [
     bonus: 'Bonus 10 Headline',
     slotStatus: 'Slot Tersedia',
     slotAvailable: true,
+    active: true,
     order: 13,
   },
   {
+    id: 'fallback-14',
     name: 'Jasa Kaligrafi Arab',
     slug: 'jasa-kaligrafi-arab',
     category: 'Seni',
     shortDesc: 'Kaligrafi Arab di kanvas, kayu, atau kaca',
-    detailDesc: 'Jasa kaligrafi Arab dengan berbagai gaya khat: Naskhi, Tsuluts, Diwani, Farisi, Kufi, dan Riqaah. Media: kanvas, kayu, kaca, dinding. Custom ukuran. Free bingkai untuk ukuran di atas 50x70cm. Pengerjaan 3-7 hari kerja.',
+    detailDesc: 'Jasa kaligrafi Arab dengan berbagai gaya khat: Naskhi, Tsuluts, Diwani, Farisi, Kufi, dan Riqaah. Media: kanvas, kayu, kaca, dinding. Custom ukuran. Free bingkai untuk ukuran di atas 50x70cm. Pengerjaan 3-7 hari kerja. Garansi warna 3 bulan.',
     price: 300000,
     priceMax: 2000000,
-    benefit1: 'Khat Berbagai Gaya Naskhi Tsuluts Diwani Farisi Kufi',
+    benefit1: 'Khat Berbagai Gaya',
     benefit2: 'Media Kanvas Kayu Kaca Dinding',
     benefit3: 'Free Bingkai Ukuran di Atas 50x70',
     benefit4: 'Custom Ukuran Sesuai Permintaan',
-    benefit5: 'Pengerjaan 3 sampai 7 Hari',
+    benefit5: 'Pengerjaan 3-7 Hari',
     waText: 'Halo Mas Iis, saya mau jasa kaligrafi',
     imageUrl: '/services/kaligrafi.png',
     bonus: 'Free bingkai',
     slotStatus: 'Slot Tersedia',
     slotAvailable: true,
+    active: true,
     order: 14,
   },
   {
+    id: 'fallback-15',
     name: 'Hiasan Pigura Custom',
     slug: 'hiasan-pigura-custom',
     category: 'Seni',
@@ -297,16 +345,18 @@ const SERVICES = [
     benefit1: 'Desain Custom Eksklusif',
     benefit2: 'Pengerjaan 7 Hari',
     benefit3: 'Bonus Box Packaging',
-    benefit4: 'Bahan Premium Kayu Jati MDF Akrilik',
+    benefit4: 'Bahan Premium',
     benefit5: 'Bisa Combo Set',
     waText: 'Halo Mas Iis, saya mau pesan pigura atau hiasan',
     imageUrl: '/services/pigura-new.png',
-    bonus: 'Bonus Box',
+    bonus: 'Bonus Box Packaging',
     slotStatus: 'Slot Tersedia',
     slotAvailable: true,
+    active: true,
     order: 15,
   },
   {
+    id: 'fallback-16',
     name: 'Hias Taman Profesional',
     slug: 'hias-taman-profesional',
     category: 'Seni',
@@ -324,9 +374,11 @@ const SERVICES = [
     bonus: 'Gratis konsultasi desain',
     slotStatus: 'Slot Tersedia',
     slotAvailable: true,
+    active: true,
     order: 16,
   },
   {
+    id: 'fallback-17',
     name: 'Jasa Hiburan Angklung',
     slug: 'jasa-hiburan-angklung',
     category: 'Event',
@@ -344,119 +396,7 @@ const SERVICES = [
     bonus: 'Free interaktif 15 menit',
     slotStatus: 'Slot Tersedia',
     slotAvailable: true,
+    active: true,
     order: 17,
   },
-]
-
-export async function GET(request: NextRequest) {
-  const db = getDb()
-  if (!db) {
-    return NextResponse.json(
-      { success: false, error: 'Database unavailable' },
-      { status: 503 }
-    )
-  }
-
-  try {
-    const { searchParams } = new URL(request.url)
-    const force = searchParams.get('force') === 'true'
-
-    // Check if already seeded
-    const existingCount = await db.service.count()
-
-    if (existingCount > 0 && !force) {
-      return NextResponse.json({
-        success: true,
-        message: `Database already has ${existingCount} services. Use ?force=true to re-seed.`,
-      })
-    }
-
-    // If force, delete existing data
-    if (force && existingCount > 0) {
-      await db.fAQ.deleteMany()
-      await db.booking.deleteMany()
-      await db.serviceImage.deleteMany()
-      await db.testimonial.deleteMany()
-      await db.landingPage.deleteMany()
-      await db.article.deleteMany()
-      await db.siteConfig.deleteMany()
-      await db.service.deleteMany()
-    }
-
-    // Seed services
-    for (const svc of SERVICES) {
-      const service = await db.service.create({ data: svc })
-      // Auto-create landing page for each service
-      await db.landingPage.create({
-        data: {
-          serviceId: service.id,
-          headline: svc.name,
-          subheadline: svc.shortDesc,
-          ctaText: 'Hubungi Sekarang',
-          sections: JSON.stringify([
-            { type: 'hero', title: svc.name, subtitle: svc.shortDesc },
-            { type: 'benefits', title: 'Keunggulan Layanan', items: [svc.benefit1, svc.benefit2, svc.benefit3, svc.benefit4, svc.benefit5] },
-            { type: 'pricing', title: 'Harga', price: svc.price, priceMax: svc.priceMax },
-            { type: 'cta', title: 'Pesan Sekarang', bonus: svc.bonus },
-          ]),
-        },
-      })
-    }
-
-    // Seed sample articles
-    await db.article.createMany({
-      data: [
-        {
-          title: 'Tips Merawat Laptop Agar Awet',
-          slug: 'tips-merawat-laptop',
-          excerpt: 'Pelajari cara merawat laptop agar tetap performa optimal selama bertahun-tahun.',
-          content: '<h2>1. Bersihkan Secara Rutin</h2><p>Bersihkan keyboard dan layar minimal 1 minggu sekali...</p><h2>2. Jangan Makan di Dekat Laptop</h2><p>Remah makanan bisa masuk ke keyboard...</p><h2>3. Gunakan Cooling Pad</h2><p>Overheating adalah musuh utama laptop...</p>',
-          published: true,
-        },
-        {
-          title: 'Cara Menyelesaikan Skripsi 1 Bulan',
-          slug: 'skripsi-1-bulan',
-          excerpt: 'Strategi praktis menyelesaikan skripsi dalam waktu singkat tanpa stres.',
-          content: '<h2>1. Tentukan Judul Secepat Mungkin</h2><p>Jangan terlalu lama mencari judul sempurna...</p><h2>2. Buat Timeline Ketat</h2><p>Bagi waktu per bab...</p>',
-          published: true,
-        },
-        {
-          title: 'Mengapa Website Penting untuk Bisnis',
-          slug: 'website-untuk-bisnis',
-          excerpt: 'Alasan mengapa setiap bisnis membutuhkan website di era digital.',
-          content: '<h2>1. Kredibilitas Bisnis</h2><p>75% konsumen menilai kredibilitas dari website...</p>',
-          published: true,
-        },
-      ],
-    })
-
-    // Seed site config
-    await db.siteConfig.createMany({
-      data: [
-        { key: 'hero_image', value: '/hero-bg-new.png' },
-        { key: 'site_name', value: 'Mas Iis - Warung Solusi' },
-        { key: 'site_description', value: 'Warung Solusi Terpercaya di Cirebon. 17 jasa lengkap.' },
-        { key: 'whatsapp_number', value: '0882-0008-58698' },
-        { key: 'address', value: 'Sindanglaut, Kab. Cirebon, Jawa Barat' },
-        { key: 'operating_hours', value: 'Senin-Sabtu 08.00-21.00 WIB' },
-        { key: 'bank_info', value: 'BCA Transfer' },
-        { key: 'warranty_policy', value: 'Garansi hingga 30 hari untuk sebagian besar jasa' },
-        { key: 'stats_customers', value: '500+' },
-        { key: 'stats_rating', value: '4.9/5' },
-        { key: 'stats_services', value: '17' },
-      ],
-    })
-
-    const count = await db.service.count()
-    return NextResponse.json({
-      success: true,
-      message: `Seeded ${count} services with landing pages, articles, and site config!`,
-    })
-  } catch (error) {
-    console.error('Setup error:', error)
-    return NextResponse.json(
-      { success: false, error: String(error) },
-      { status: 500 }
-    )
-  }
-}
+];

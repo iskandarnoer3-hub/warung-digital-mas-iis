@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { getDb } from '@/lib/db';
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; imageId: string }> }
 ) {
+  const db = getDb()
+  if (!db) {
+    return NextResponse.json(
+      { success: false, error: 'Database unavailable' },
+      { status: 503 }
+    );
+  }
+
   try {
     const { id, imageId } = await params;
 

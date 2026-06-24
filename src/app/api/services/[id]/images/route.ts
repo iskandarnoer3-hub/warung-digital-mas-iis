@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { getDb } from '@/lib/db';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const db = getDb()
+  if (!db) {
+    return NextResponse.json({ success: true, data: [] });
+  }
+
   try {
     const { id } = await params;
     const images = await db.serviceImage.findMany({
@@ -14,7 +19,7 @@ export async function GET(
     return NextResponse.json({ success: true, data: images });
   } catch (error) {
     console.error('Fetch images error:', error);
-    return NextResponse.json({ success: false, error: 'Failed to fetch images' }, { status: 500 });
+    return NextResponse.json({ success: true, data: [] });
   }
 }
 
@@ -22,6 +27,14 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const db = getDb()
+  if (!db) {
+    return NextResponse.json(
+      { success: false, error: 'Database unavailable' },
+      { status: 503 }
+    );
+  }
+
   try {
     const { id } = await params;
     const body = await request.json();

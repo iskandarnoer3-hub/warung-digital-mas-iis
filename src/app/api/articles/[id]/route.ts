@@ -1,10 +1,18 @@
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const db = getDb()
+  if (!db) {
+    return NextResponse.json(
+      { success: false, error: 'Database unavailable' },
+      { status: 503 }
+    )
+  }
+
   try {
     const { id } = await params
     const body = await request.json()
@@ -71,6 +79,14 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const db = getDb()
+  if (!db) {
+    return NextResponse.json(
+      { success: false, error: 'Database unavailable' },
+      { status: 503 }
+    )
+  }
+
   try {
     const { id } = await params
 

@@ -39,6 +39,7 @@ import {
   Clock,
   Award,
 } from 'lucide-react';
+import { FALLBACK_SERVICES } from '@/data/fallback-services';
 
 interface ServiceImage {
   id: string;
@@ -432,24 +433,55 @@ export default function ServiceFullPage({ serviceId, onBack, onAskAI }: Props) {
   useEffect(() => {
     async function loadService() {
       setLoading(true);
+
+      // Try API first with safe JSON parsing
       try {
         const res = await fetch(`/api/services/${serviceId}`);
-        const data = await res.json();
-        if (data.success) {
-          setService(data.data);
-          // Notify admin panel about the current service context
-          window.dispatchEvent(new CustomEvent('admin-set-context', {
-            detail: {
-              page: 'service',
-              serviceId: data.data.id,
-              serviceSlug: data.data.slug,
-              serviceName: data.data.name,
-            },
-          }));
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const data = await res.json();
+          if (data.success && data.data) {
+            setService(data.data);
+            // Notify admin panel about the current service context
+            window.dispatchEvent(new CustomEvent('admin-set-context', {
+              detail: {
+                page: 'service',
+                serviceId: data.data.id,
+                serviceSlug: data.data.slug,
+                serviceName: data.data.name,
+              },
+            }));
+            setLoading(false);
+            return;
+          }
         }
       } catch (err) {
-        console.error('Failed to fetch service:', err);
+        console.error('Failed to fetch service from API:', err);
       }
+
+      // Fallback: try to find service from local data (by ID, slug, or order number)
+      const fallback = FALLBACK_SERVICES.find(s =>
+        s.id === serviceId ||
+        s.slug === serviceId ||
+        s.order === parseInt(serviceId, 10)
+      );
+      if (fallback) {
+        setService(fallback as unknown as Service);
+        setLoading(false);
+        return;
+      }
+
+      // Last resort: if serviceId looks like a number 1-17, use order lookup
+      const orderNum = parseInt(serviceId.replace(/\D/g, ''), 10);
+      if (orderNum >= 1 && orderNum <= 17) {
+        const byOrder = FALLBACK_SERVICES.find(s => s.order === orderNum);
+        if (byOrder) {
+          setService(byOrder as unknown as Service);
+          setLoading(false);
+          return;
+        }
+      }
+
       setLoading(false);
     }
     loadService();
