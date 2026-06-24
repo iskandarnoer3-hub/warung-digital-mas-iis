@@ -1,6 +1,10 @@
 import { getDb, resetDb } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
+// Force dynamic - never cache
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 // Default site config when database is unavailable
 const DEFAULT_SITE_CONFIG: Record<string, string> = {
   hero_image: '/hero-bg-new.png',
@@ -12,6 +16,8 @@ const DEFAULT_SITE_CONFIG: Record<string, string> = {
   stats_customers: '500+',
   stats_rating: '4.9/5',
   stats_services: '17',
+  warranty_policy: 'Garansi hingga 30 hari untuk sebagian besar jasa',
+  bank_info: 'BCA Transfer',
 }
 
 function isPreparedStmtError(err: unknown): boolean {
@@ -20,13 +26,15 @@ function isPreparedStmtError(err: unknown): boolean {
 }
 
 export async function GET() {
-  const db = getDb()
-  if (!db) {
-    return NextResponse.json({ success: true, data: DEFAULT_SITE_CONFIG })
-  }
-
+  // Always return success with at least default config
+  // This prevents 500 errors that break the frontend
   try {
-    const configs = await db.siteConfig.findMany()
+    const db = getDb()
+    if (!db) {
+      return NextResponse.json({ success: true, data: DEFAULT_SITE_CONFIG })
+    }
+
+    const configs = await db.siteConfig.findMany().catch(() => [])
 
     // Convert array of records into a key-value map
     const data: Record<string, string> = { ...DEFAULT_SITE_CONFIG }
@@ -36,10 +44,11 @@ export async function GET() {
 
     return NextResponse.json({ success: true, data })
   } catch (dbError) {
-    console.error('DB error, returning default site config:', dbError)
+    console.error('site-config GET error, returning defaults:', dbError)
     if (isPreparedStmtError(dbError)) {
       resetDb()
     }
+    // ALWAYS return success with default config - never 500
     return NextResponse.json({ success: true, data: DEFAULT_SITE_CONFIG })
   }
 }
@@ -81,6 +90,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, data: config })
   } catch (error) {
     console.error('Error upserting site config:', error)
+    if (isPreparedStmtError(error)) {
+      resetDb()
+    }
     return NextResponse.json(
       { success: false, error: 'Failed to update site configuration' },
       { status: 500 }
