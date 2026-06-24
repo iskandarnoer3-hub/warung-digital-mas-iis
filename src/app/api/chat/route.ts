@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import ZAI from 'z-ai-web-dev-sdk'
 import { AI_SYSTEM_PROMPT } from '@/lib/ai-system-prompt'
 import { getDb, resetDb } from '@/lib/db'
+import { callGroq, isGroqAvailable } from '@/lib/groq-ai'
 
 // Force dynamic, disable static optimization
 export const dynamic = 'force-dynamic'
@@ -12,12 +13,12 @@ export const maxDuration = 60
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID
 
-// Singleton ZAI instance
+// Singleton ZAI instance (fallback only)
 let zaiInstance: Awaited<ReturnType<typeof ZAI.create>> | null = null
 
 async function getZAI() {
   if (!zaiInstance) {
-    console.log('[chat] Initializing ZAI instance...')
+    console.log('[chat] Initializing ZAI instance (fallback)...')
     zaiInstance = await ZAI.create()
     console.log('[chat] ZAI instance ready')
   }
@@ -112,49 +113,81 @@ export async function POST(request: NextRequest) {
     ]
 
     let reply = ''
+    const groqAvailable = isGroqAvailable()
+    console.log(`[chat:${requestId}] Groq direct API available: ${groqAvailable}`)
 
-    // Retry mechanism for AI calls (max 2 attempts)
-    for (let attempt = 1; attempt <= 2; attempt++) {
+    // =====================================================
+    // STRATEGY: 3-layer AI fallback
+    // 1. Direct Groq API (most reliable in serverless)
+    // 2. z-ai-web-dev-sdk (existing fallback)
+    // 3. Friendly error message
+    // =====================================================
+
+    // LAYER 1: Direct Groq API (PRIMARY)
+    if (groqAvailable) {
       try {
-        console.log(`[chat:${requestId}] AI attempt ${attempt}...`)
-        const zai = await getZAI()
-
-        const completion = await zai.chat.completions.create({
-          messages: aiMessages,
-          thinking: { type: 'disabled' },
-          // Increase timeout via longer streaming
-          stream: false,
+        console.log(`[chat:${requestId}] Layer 1: Direct Groq API...`)
+        reply = await callGroq({
+          messages: aiMessages.map(m => ({
+            role: m.role as 'system' | 'user' | 'assistant',
+            content: m.content,
+          })),
+          temperature: 0.7,
+          maxTokens: 1024,
         })
+        console.log(`[chat:${requestId}] ✓ Groq direct success (${reply.length} chars)`)
+      } catch (groqError) {
+        console.error(`[chat:${requestId}] Layer 1 (Groq direct) failed:`, groqError instanceof Error ? groqError.message : groqError)
+        reply = '' // Reset, try next layer
+      }
+    }
 
-        const rawReply = completion.choices?.[0]?.message?.content
+    // LAYER 2: z-ai-web-dev-sdk (FALLBACK)
+    if (!reply) {
+      console.log(`[chat:${requestId}] Layer 2: z-ai-web-dev-sdk fallback...`)
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          console.log(`[chat:${requestId}] ZAI attempt ${attempt}...`)
+          const zai = await getZAI()
 
-        if (rawReply && rawReply.trim().length > 0) {
-          // Remove any accidental asterisks from AI response (WhatsApp safety)
-          reply = rawReply.replace(/\*\*/g, '').replace(/\*/g, '')
-          console.log(`[chat:${requestId}] ✓ AI reply success on attempt ${attempt} (${reply.length} chars)`)
-          break
-        } else {
-          console.warn(`[chat:${requestId}] AI returned empty content on attempt ${attempt}`)
+          const completion = await zai.chat.completions.create({
+            messages: aiMessages,
+            thinking: { type: 'disabled' },
+            stream: false,
+          })
+
+          const rawReply = completion.choices?.[0]?.message?.content
+
+          if (rawReply && rawReply.trim().length > 0) {
+            // Remove any accidental asterisks from AI response (WhatsApp safety)
+            reply = rawReply.replace(/\*\*/g, '').replace(/\*/g, '')
+            console.log(`[chat:${requestId}] ✓ ZAI reply success on attempt ${attempt} (${reply.length} chars)`)
+            break
+          } else {
+            console.warn(`[chat:${requestId}] ZAI returned empty content on attempt ${attempt}`)
+            if (attempt === 2) {
+              reply = ''
+            }
+          }
+        } catch (aiError) {
+          console.error(`[chat:${requestId}] ZAI attempt ${attempt} failed:`, aiError)
+          // Reset ZAI instance on error
+          zaiInstance = null
+
           if (attempt === 2) {
-            reply = 'Maaf kak, AI lagi nggak fokus nih. Coba ulangi pertanyaannya, atau langsung WA Mas Iis: 0882-0008-58698 ya kak 😊'
+            reply = ''
+          } else {
+            // Wait 1 second before retry
+            await new Promise(resolve => setTimeout(resolve, 1000))
           }
         }
-      } catch (aiError) {
-        console.error(`[chat:${requestId}] AI attempt ${attempt} failed:`, aiError)
-        // Reset ZAI instance on error
-        zaiInstance = null
-
-        if (attempt === 2) {
-          // Last attempt failed - return fallback message
-          const errMsg = aiError instanceof Error ? aiError.message : String(aiError)
-          console.error(`[chat:${requestId}] All AI attempts failed. Error: ${errMsg}`)
-
-          reply = 'Maaf kak, AI lagi sibuk nih. Coba lagi sebentar ya, atau langsung WA Mas Iis: 0882-0008-58698 😊'
-        } else {
-          // Wait 1 second before retry
-          await new Promise(resolve => setTimeout(resolve, 1000))
-        }
       }
+    }
+
+    // LAYER 3: Friendly fallback message (LAST RESORT)
+    if (!reply) {
+      console.error(`[chat:${requestId}] All AI layers failed. Returning friendly fallback.`)
+      reply = 'Maaf kak, AI lagi sibuk nih. Coba lagi sebentar ya, atau langsung WA Mas Iis: 0882-0008-58698 😊'
     }
 
     // Try to save assistant reply (non-blocking if DB is down)
