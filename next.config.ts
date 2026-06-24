@@ -12,6 +12,15 @@ const nextConfig: NextConfig = {
     SUPABASE_DATABASE_URL: process.env.SUPABASE_DATABASE_URL,
     SUPABASE_DIRECT_URL: process.env.SUPABASE_DIRECT_URL,
   },
+  // Vercel serverless function config
+  experimental: {
+    // Allow longer timeout for AI chat
+    serverActions: {
+      bodySizeLimit: '5mb',
+    },
+  },
 };
 
 export default nextConfig;
+
+// Vercel function timeout (in seconds) - applied via vercel.json
