@@ -3,6 +3,7 @@ import ZAI from 'z-ai-web-dev-sdk'
 import { AI_SYSTEM_PROMPT } from '@/lib/ai-system-prompt'
 import { getDb, resetDb } from '@/lib/db'
 import { callGroq, isGroqAvailable } from '@/lib/groq-ai'
+import { tryStaticReply } from '@/lib/knowledge-base'
 
 // Force dynamic, disable static optimization
 export const dynamic = 'force-dynamic'
@@ -117,14 +118,24 @@ export async function POST(request: NextRequest) {
     console.log(`[chat:${requestId}] Groq direct API available: ${groqAvailable}`)
 
     // =====================================================
-    // STRATEGY: 3-layer AI fallback
+    // STRATEGY: 4-layer AI fallback
+    // 0. Static knowledge base (instant, no API call)
     // 1. Direct Groq API (most reliable in serverless)
     // 2. z-ai-web-dev-sdk (existing fallback)
     // 3. Friendly error message
     // =====================================================
 
-    // LAYER 1: Direct Groq API (PRIMARY)
-    if (groqAvailable) {
+    // LAYER 0: Static knowledge base (instant, no external API)
+    // Handles common questions: jam buka, alamat, daftar jasa, harga, dll.
+    // This ensures the bot is ALWAYS useful even when all AI is down.
+    const staticReply = tryStaticReply(message)
+    if (staticReply) {
+      console.log(`[chat:${requestId}] Layer 0: Static KB match (${staticReply.length} chars)`)
+      reply = staticReply
+    }
+
+    // LAYER 1: Direct Groq API (PRIMARY AI) - skip if Layer 0 already matched
+    if (!reply && groqAvailable) {
       try {
         console.log(`[chat:${requestId}] Layer 1: Direct Groq API...`)
         reply = await callGroq({
