@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { FALLBACK_SERVICES } from '@/data/fallback-services'
-import { getDb, resetDb } from '@/lib/db'
+import { getDb, resetDb, withRetry, isPreparedStmtError } from '@/lib/db'
 
-// Track DB availability to avoid repeated connection attempts
+// Track DB availability - shorter cooldown (5s instead of 30s)
 let dbAvailable = true
-
-function isPreparedStmtError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err)
-  return msg.includes('prepared statement') || msg.includes('42P05')
-}
 
 export async function GET(
   request: NextRequest,
@@ -44,20 +39,24 @@ export async function GET(
     const db = getDb()
     if (db) {
       try {
-        const service = await db.service.findUnique({
-          where: { id },
-          include: { landingPage: true, images: { orderBy: { order: 'asc' } } },
-        })
+        const service = await withRetry(() =>
+          db.service.findUnique({
+            where: { id },
+            include: { landingPage: true, images: { orderBy: { order: 'asc' } } },
+          })
+        )
 
         if (service) {
           return NextResponse.json({ success: true, data: service })
         }
 
         // Try slug lookup in DB
-        const bySlug = await db.service.findUnique({
-          where: { slug: id },
-          include: { landingPage: true, images: { orderBy: { order: 'asc' } } },
-        })
+        const bySlug = await withRetry(() =>
+          db.service.findUnique({
+            where: { slug: id },
+            include: { landingPage: true, images: { orderBy: { order: 'asc' } } },
+          })
+        )
 
         if (bySlug) {
           return NextResponse.json({ success: true, data: bySlug })
@@ -68,7 +67,7 @@ export async function GET(
           resetDb()
         }
         dbAvailable = false
-        setTimeout(() => { dbAvailable = true }, 30000)
+        setTimeout(() => { dbAvailable = true }, 5000)
       }
     }
   }
@@ -95,7 +94,7 @@ export async function PUT(
   try {
     const body = await request.json()
 
-    const existing = await db.service.findUnique({ where: { id } })
+    const existing = await withRetry(() => db.service.findUnique({ where: { id } }))
     if (!existing) {
       return NextResponse.json(
         { success: false, error: 'Service not found' },
@@ -129,9 +128,11 @@ export async function PUT(
     }
 
     if (updateData.slug && updateData.slug !== existing.slug) {
-      const slugConflict = await db.service.findUnique({
-        where: { slug: updateData.slug as string },
-      })
+      const slugConflict = await withRetry(() =>
+        db.service.findUnique({
+          where: { slug: updateData.slug as string },
+        })
+      )
       if (slugConflict && slugConflict.id !== id) {
         return NextResponse.json(
           { success: false, error: 'A service with this slug already exists' },
@@ -140,15 +141,20 @@ export async function PUT(
       }
     }
 
-    const service = await db.service.update({
-      where: { id },
-      data: updateData,
-      include: { landingPage: true, images: { orderBy: { order: 'asc' } } },
-    })
+    const service = await withRetry(() =>
+      db.service.update({
+        where: { id },
+        data: updateData,
+        include: { landingPage: true, images: { orderBy: { order: 'asc' } } },
+      })
+    )
 
     return NextResponse.json({ success: true, data: service })
   } catch (error) {
     console.error('Error updating service:', error)
+    if (isPreparedStmtError(error)) {
+      resetDb()
+    }
     return NextResponse.json(
       { success: false, error: 'Failed to update service' },
       { status: 500 }
@@ -170,7 +176,7 @@ export async function DELETE(
   }
 
   try {
-    const existing = await db.service.findUnique({ where: { id } })
+    const existing = await withRetry(() => db.service.findUnique({ where: { id } }))
     if (!existing) {
       return NextResponse.json(
         { success: false, error: 'Service not found' },
@@ -178,7 +184,7 @@ export async function DELETE(
       )
     }
 
-    await db.service.delete({ where: { id } })
+    await withRetry(() => db.service.delete({ where: { id } }))
 
     return NextResponse.json({
       success: true,
@@ -186,6 +192,9 @@ export async function DELETE(
     })
   } catch (error) {
     console.error('Error deleting service:', error)
+    if (isPreparedStmtError(error)) {
+      resetDb()
+    }
     return NextResponse.json(
       { success: false, error: 'Failed to delete service' },
       { status: 500 }
