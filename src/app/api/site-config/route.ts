@@ -1,4 +1,4 @@
-import { getDb, resetDb } from '@/lib/db'
+import { getDb, resetDb, withRetry, isPreparedStmtError } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
 // Force dynamic - never cache
@@ -20,11 +20,6 @@ const DEFAULT_SITE_CONFIG: Record<string, string> = {
   bank_info: 'BCA Transfer',
 }
 
-function isPreparedStmtError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err)
-  return msg.includes('prepared statement') || msg.includes('42P05')
-}
-
 export async function GET() {
   // Always return success with at least default config
   // This prevents 500 errors that break the frontend
@@ -34,20 +29,26 @@ export async function GET() {
       return NextResponse.json({ success: true, data: DEFAULT_SITE_CONFIG })
     }
 
-    const configs = await db.siteConfig.findMany().catch(() => [])
+    try {
+      const configs = await withRetry(() => db.siteConfig.findMany())
 
-    // Convert array of records into a key-value map
-    const data: Record<string, string> = { ...DEFAULT_SITE_CONFIG }
-    for (const config of configs) {
-      data[config.key] = config.value
+      // Convert array of records into a key-value map
+      const data: Record<string, string> = { ...DEFAULT_SITE_CONFIG }
+      for (const config of configs) {
+        data[config.key] = config.value
+      }
+
+      return NextResponse.json({ success: true, data })
+    } catch (dbError) {
+      console.error('site-config DB error, returning defaults:', dbError)
+      if (isPreparedStmtError(dbError)) {
+        resetDb()
+      }
+      // ALWAYS return success with default config - never 500
+      return NextResponse.json({ success: true, data: DEFAULT_SITE_CONFIG })
     }
-
-    return NextResponse.json({ success: true, data })
   } catch (dbError) {
     console.error('site-config GET error, returning defaults:', dbError)
-    if (isPreparedStmtError(dbError)) {
-      resetDb()
-    }
     // ALWAYS return success with default config - never 500
     return NextResponse.json({ success: true, data: DEFAULT_SITE_CONFIG })
   }
@@ -81,18 +82,28 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const config = await db.siteConfig.upsert({
-      where: { key },
-      update: { value },
-      create: { key, value },
-    })
+    try {
+      const config = await withRetry(() =>
+        db.siteConfig.upsert({
+          where: { key },
+          update: { value },
+          create: { key, value },
+        })
+      )
 
-    return NextResponse.json({ success: true, data: config })
+      return NextResponse.json({ success: true, data: config })
+    } catch (dbError) {
+      console.error('Error upserting site config (DB):', dbError)
+      if (isPreparedStmtError(dbError)) {
+        resetDb()
+      }
+      return NextResponse.json(
+        { success: false, error: 'Database error. Coba lagi sebentar.' },
+        { status: 500 }
+      )
+    }
   } catch (error) {
     console.error('Error upserting site config:', error)
-    if (isPreparedStmtError(error)) {
-      resetDb()
-    }
     return NextResponse.json(
       { success: false, error: 'Failed to update site configuration' },
       { status: 500 }
