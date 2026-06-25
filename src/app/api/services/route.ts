@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { FALLBACK_SERVICES } from '@/data/fallback-services'
-import { getDb, resetDb } from '@/lib/db'
+import { getDb, resetDb, withRetry, isPreparedStmtError } from '@/lib/db'
 
 function generateSlug(text: string): string {
   return text
@@ -11,13 +11,9 @@ function generateSlug(text: string): string {
     .replace(/^-|-$/g, '')
 }
 
-// Track DB availability
+// Track DB availability - shorter cooldown (5s instead of 30s)
+// because withRetry handles most transient errors
 let dbAvailable = true
-
-function isPreparedStmtError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err)
-  return msg.includes('prepared statement') || msg.includes('42P05')
-}
 
 export async function GET() {
   // Try database first, but always have fallback ready
@@ -25,11 +21,13 @@ export async function GET() {
     try {
       const db = getDb()
       if (db) {
-        const services = await db.service.findMany({
-          where: { active: true },
-          orderBy: { order: 'asc' },
-          include: { landingPage: true, images: { orderBy: { order: 'asc' } } },
-        })
+        const services = await withRetry(() =>
+          db.service.findMany({
+            where: { active: true },
+            orderBy: { order: 'asc' },
+            include: { landingPage: true, images: { orderBy: { order: 'asc' } } },
+          })
+        )
         if (services.length > 0) {
           return NextResponse.json({ success: true, data: services })
         }
@@ -40,7 +38,8 @@ export async function GET() {
         resetDb()
       }
       dbAvailable = false
-      setTimeout(() => { dbAvailable = true }, 30000)
+      // Short cooldown - withRetry already tried to recover
+      setTimeout(() => { dbAvailable = true }, 5000)
     }
   }
 
@@ -63,7 +62,7 @@ export async function POST(request: NextRequest) {
     const slug = body.slug || generateSlug(body.name)
 
     // Check for duplicate slug
-    const existing = await db.service.findUnique({ where: { slug } })
+    const existing = await withRetry(() => db.service.findUnique({ where: { slug } }))
     if (existing) {
       return NextResponse.json(
         { success: false, error: 'A service with this slug already exists' },
@@ -71,55 +70,64 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const service = await db.service.create({
-      data: {
-        name: body.name,
-        slug,
-        category: body.category || '',
-        shortDesc: body.shortDesc || '',
-        detailDesc: body.detailDesc || '',
-        price: body.price ?? 0,
-        priceMax: body.priceMax ?? 0,
-        benefit1: body.benefit1 || '',
-        benefit2: body.benefit2 || '',
-        benefit3: body.benefit3 || '',
-        benefit4: body.benefit4 || '',
-        benefit5: body.benefit5 || '',
-        waText: body.waText || '',
-        imageUrl: body.imageUrl || '',
-        heroImageUrl: body.heroImageUrl || '',
-        videoUrl: body.videoUrl || '',
-        audioUrl: body.audioUrl || '',
-        externalLink: body.externalLink || '',
-        bonus: body.bonus || '',
-        slotStatus: body.slotStatus || 'Slot Tersedia',
-        slotAvailable: body.slotAvailable ?? true,
-        active: body.active ?? true,
-        order: body.order ?? 0,
-      },
-    })
+    const service = await withRetry(() =>
+      db.service.create({
+        data: {
+          name: body.name,
+          slug,
+          category: body.category || '',
+          shortDesc: body.shortDesc || '',
+          detailDesc: body.detailDesc || '',
+          price: body.price ?? 0,
+          priceMax: body.priceMax ?? 0,
+          benefit1: body.benefit1 || '',
+          benefit2: body.benefit2 || '',
+          benefit3: body.benefit3 || '',
+          benefit4: body.benefit4 || '',
+          benefit5: body.benefit5 || '',
+          waText: body.waText || '',
+          imageUrl: body.imageUrl || '',
+          heroImageUrl: body.heroImageUrl || '',
+          videoUrl: body.videoUrl || '',
+          audioUrl: body.audioUrl || '',
+          externalLink: body.externalLink || '',
+          bonus: body.bonus || '',
+          slotStatus: body.slotStatus || 'Slot Tersedia',
+          slotAvailable: body.slotAvailable ?? true,
+          active: body.active ?? true,
+          order: body.order ?? 0,
+        },
+      })
+    )
 
     // Auto-create a LandingPage for the new service
-    await db.landingPage.create({
-      data: {
-        serviceId: service.id,
-        headline: body.landingHeadline || service.name,
-        subheadline: body.landingSubheadline || service.shortDesc,
-        ctaText: body.landingCtaText || 'Hubungi Sekarang',
-        sections: body.landingSections || '[]',
-        active: true,
-      },
-    })
+    await withRetry(() =>
+      db.landingPage.create({
+        data: {
+          serviceId: service.id,
+          headline: body.landingHeadline || service.name,
+          subheadline: body.landingSubheadline || service.shortDesc,
+          ctaText: body.landingCtaText || 'Hubungi Sekarang',
+          sections: body.landingSections || '[]',
+          active: true,
+        },
+      })
+    )
 
     // Return the service with its landing page
-    const result = await db.service.findUnique({
-      where: { id: service.id },
-      include: { landingPage: true },
-    })
+    const result = await withRetry(() =>
+      db.service.findUnique({
+        where: { id: service.id },
+        include: { landingPage: true },
+      })
+    )
 
     return NextResponse.json({ success: true, data: result }, { status: 201 })
   } catch (error) {
     console.error('Error creating service:', error)
+    if (isPreparedStmtError(error)) {
+      resetDb()
+    }
     return NextResponse.json(
       { success: false, error: 'Failed to create service' },
       { status: 500 }
