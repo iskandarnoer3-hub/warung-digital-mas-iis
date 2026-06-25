@@ -27,15 +27,29 @@ function ensurePgBouncerParams(url: string): string {
   if (!url) return url
   let result = url
 
-  // Only add pgbouncer=true for pooler connections (port 6543 or contains "pooler")
-  const isPooler = url.includes(':6543') || url.includes('pooler')
-  if (isPooler && !result.includes('pgbouncer=true')) {
-    result += (result.includes('?') ? '&' : '?') + 'pgbouncer=true'
-  }
+  // Detect pooler connections - check multiple patterns:
+  // 1. Port 6543 (Supabase pooler port)
+  // 2. URL contains "pooler" (Supabase pooler hostname)
+  // 3. URL contains "supabase" AND port 6543
+  const isPooler = url.includes(':6543') ||
+    url.includes('pooler') ||
+    (url.includes('supabase') && url.includes(':6543'))
 
-  // connection_limit=1 prevents concurrent prepared statement conflicts
-  if (isPooler && !result.includes('connection_limit=')) {
-    result += '&connection_limit=1'
+  if (isPooler) {
+    // Add pgbouncer=true if missing
+    if (!result.includes('pgbouncer=true')) {
+      result += (result.includes('?') ? '&' : '?') + 'pgbouncer=true'
+    }
+    // Add connection_limit=1 if missing (prevents concurrent prepared stmt conflicts)
+    if (!result.includes('connection_limit=')) {
+      // Ensure we have a ? before adding &
+      if (!result.includes('?')) {
+        result += '?'
+      } else if (!result.endsWith('&') && !result.endsWith('?')) {
+        result += '&'
+      }
+      result += 'connection_limit=1'
+    }
   }
 
   return result
@@ -60,7 +74,11 @@ export function getDb(): PrismaClient | null {
     if (rawUrl && (rawUrl.startsWith('postgresql://') || rawUrl.startsWith('postgres://'))) {
       // CRITICAL: Force pgbouncer params to prevent 42P05/26000 errors
       const dbUrl = ensurePgBouncerParams(rawUrl)
-      console.log('[db] Using database URL with forced pgbouncer params:', dbUrl.replace(/:[^:@]+@/, ':***@'))
+      const wasModified = dbUrl !== rawUrl
+      const sanitized = dbUrl.replace(/:[^:@]+@/, ':***@')
+      console.log('[db] Pgbouncer fix ACTIVE:', wasModified ? 'params ADDED' : 'params already present')
+      console.log('[db] Database URL:', sanitized)
+      console.log('[db] Fix version: 4-layer-ai + force-pgbouncer + withRetry')
 
       _client = new PrismaClient({
         log: ['error'],
