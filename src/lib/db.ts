@@ -78,7 +78,7 @@ export function getDb(): PrismaClient | null {
       const sanitized = dbUrl.replace(/:[^:@]+@/, ':***@')
       console.log('[db] Pgbouncer fix ACTIVE:', wasModified ? 'params ADDED' : 'params already present')
       console.log('[db] Database URL:', sanitized)
-      console.log('[db] Fix version: 4-layer-ai + force-pgbouncer + withRetry')
+      console.log('[db] Fix version: upload-persist + ai-stable + compress')
 
       _client = new PrismaClient({
         log: ['error'],
