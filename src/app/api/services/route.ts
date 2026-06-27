@@ -12,8 +12,15 @@ function generateSlug(text: string): string {
 }
 
 // Track DB availability - shorter cooldown (5s instead of 30s)
-// because withRetry handles most transient errors
 let dbAvailable = true
+
+// CRITICAL: Headers to prevent any caching
+const NO_CACHE_HEADERS = {
+  'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+  'Pragma': 'no-cache',
+  'Expires': '0',
+  'Surrogate-Control': 'no-store',
+}
 
 export async function GET() {
   // Try database first, but always have fallback ready
@@ -29,7 +36,10 @@ export async function GET() {
           })
         )
         if (services.length > 0) {
-          return NextResponse.json({ success: true, data: services })
+          return NextResponse.json(
+            { success: true, data: services },
+            { headers: NO_CACHE_HEADERS }
+          )
         }
       }
     } catch (error) {
@@ -38,13 +48,15 @@ export async function GET() {
         resetDb()
       }
       dbAvailable = false
-      // Short cooldown - withRetry already tried to recover
       setTimeout(() => { dbAvailable = true }, 5000)
     }
   }
 
   // Fallback when DB is unavailable
-  return NextResponse.json({ success: true, data: FALLBACK_SERVICES })
+  return NextResponse.json(
+    { success: true, data: FALLBACK_SERVICES },
+    { headers: NO_CACHE_HEADERS }
+  )
 }
 
 export async function POST(request: NextRequest) {
@@ -122,7 +134,10 @@ export async function POST(request: NextRequest) {
       })
     )
 
-    return NextResponse.json({ success: true, data: result }, { status: 201 })
+    return NextResponse.json(
+      { success: true, data: result },
+      { status: 201, headers: NO_CACHE_HEADERS }
+    )
   } catch (error) {
     console.error('Error creating service:', error)
     if (isPreparedStmtError(error)) {
