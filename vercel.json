@@ -4,23 +4,11 @@
       "maxDuration": 60,
       "memory": 1024
     },
-    "src/app/api/services/route.ts": {
+    "src/app/api/upload/route.ts": {
       "maxDuration": 30,
-      "memory": 512
-    },
-    "src/app/api/services/[id]/route.ts": {
-      "maxDuration": 30,
-      "memory": 512
-    },
-    "src/app/api/articles/route.ts": {
-      "maxDuration": 30,
-      "memory": 512
+      "memory": 1024
     },
     "src/app/api/site-config/route.ts": {
-      "maxDuration": 30,
-      "memory": 512
-    },
-    "src/app/api/landing-pages/route.ts": {
       "maxDuration": 30,
       "memory": 512
     }
