@@ -14,13 +14,12 @@ const nextConfig: NextConfig = {
   },
   // Vercel serverless function config
   experimental: {
-    // Allow longer timeout for AI chat
+    // Allow larger body for upload (base64 data URLs can be big)
+    // Default is 1MB, we raise to 15MB for safety
     serverActions: {
-      bodySizeLimit: '5mb',
+      bodySizeLimit: '15mb',
     },
   },
 };
 
 export default nextConfig;
-
-// Vercel function timeout (in seconds) - applied via vercel.json
