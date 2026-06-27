@@ -33,7 +33,9 @@ export default function HeroSection() {
   useEffect(() => {
     async function loadHeroImage() {
       try {
-        const res = await fetch('/api/site-config')
+        // CRITICAL: cache: 'no-store' to always get fresh data from DB
+        // Without this, browser caches old hero_image and new upload won't show
+        const res = await fetch('/api/site-config', { cache: 'no-store' })
         const data = await res.json()
         if (data.success && data.data?.hero_image) {
           setHeroImage(data.data.hero_image)
