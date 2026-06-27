@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import ZAI from 'z-ai-web-dev-sdk'
 import { AI_SYSTEM_PROMPT } from '@/lib/ai-system-prompt'
-import { getDb, resetDb } from '@/lib/db'
+import { getDb, resetDb, withRetry, isPreparedStmtError } from '@/lib/db'
 import { callGroq, isGroqAvailable } from '@/lib/groq-ai'
 import { tryStaticReply } from '@/lib/knowledge-base'
 
@@ -46,11 +46,6 @@ async function sendToTelegram(text: string) {
   }
 }
 
-function isPreparedStmtError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err)
-  return msg.includes('prepared statement') || msg.includes('42P05')
-}
-
 // Check if database is available
 let dbAvailable = true
 
@@ -79,16 +74,20 @@ export async function POST(request: NextRequest) {
       try {
         const db = getDb()
         if (db) {
-          await db.chatLog.create({
-            data: { sessionId, role: 'user', message },
-          })
+          await withRetry(() =>
+            db.chatLog.create({
+              data: { sessionId, role: 'user', message },
+            })
+          )
 
           // Get recent chat history for context (last 10 messages)
-          const history = await db.chatLog.findMany({
-            where: { sessionId },
-            orderBy: { createdAt: 'desc' },
-            take: 10,
-          })
+          const history = await withRetry(() =>
+            db.chatLog.findMany({
+              where: { sessionId },
+              orderBy: { createdAt: 'desc' },
+              take: 10,
+            })
+          )
           history.reverse()
           chatHistory = history.map((msg) => ({
             role: msg.role as 'user' | 'assistant',
@@ -102,7 +101,7 @@ export async function POST(request: NextRequest) {
           resetDb()
         }
         dbAvailable = false
-        setTimeout(() => { dbAvailable = true }, 30000)
+        setTimeout(() => { dbAvailable = true }, 5000)
       }
     }
 
@@ -206,9 +205,11 @@ export async function POST(request: NextRequest) {
       try {
         const db = getDb()
         if (db) {
-          await db.chatLog.create({
-            data: { sessionId, role: 'assistant', message: reply },
-          })
+          await withRetry(() =>
+            db.chatLog.create({
+              data: { sessionId, role: 'assistant', message: reply },
+            })
+          )
         }
       } catch (dbError) {
         console.error(`[chat:${requestId}] DB save error (non-critical):`, dbError)
@@ -216,7 +217,7 @@ export async function POST(request: NextRequest) {
           resetDb()
         }
         dbAvailable = false
-        setTimeout(() => { dbAvailable = true }, 30000)
+        setTimeout(() => { dbAvailable = true }, 5000)
       }
     }
 
