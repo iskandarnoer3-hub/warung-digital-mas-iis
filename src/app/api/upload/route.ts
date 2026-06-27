@@ -5,22 +5,17 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 // =====================================================
-// UPLOAD STRATEGY: Base64 Data URL
+// UPLOAD STRATEGY: Base64 Data URL with compression support
 // =====================================================
-// Masalah sebelumnya: file ditulis ke /tmp/uploads/... tapi
-// Next.js TIDAK menyajikan file dari /tmp (hanya /public/),
-// dan di Vercel /tmp itu ephemeral (hilang setelah function).
-// Akibatnya: upload "sukses" 200 tapi URL yang dikembalikan
-// (/uploads/...) selalu 404 saat diakses.
+// Frontend (admin-panel) akan kompres gambar sebelum upload
+// pakai src/lib/compress-image.ts. Tapi kita tetap allow
+// file sampai 10MB sebagai safety net (untuk PDF/video).
 //
-// Solusi: convert file ke base64 data URL langsung.
-// - Tidak butuh filesystem (works di Vercel serverless)
-// - Browser langsung render data URL
-// - Disimpan di DB sebagai string (kolom url)
-// - No external storage (Supabase Blob/Vercel Blob/S3) needed
+// Untuk gambar: frontend kompres ke <1.2MB dulu, jadi
+// base64 di DB cuma ~1.6MB (safe untuk Vercel 4.5MB limit).
 // =====================================================
 
-const MAX_FILE_SIZE = 3 * 1024 * 1024 // 3MB (data URL ~1.33x ukuran asli)
+const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB (frontend akan kompres dulu)
 const ALLOWED_TYPES = [
   'image/jpeg',
   'image/png',
@@ -69,7 +64,6 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(bytes)
 
     // Convert to base64 data URL
-    // Format: data:[<mediatype>][;base64],<data>
     const base64 = buffer.toString('base64')
     const dataUrl = `data:${file.type};base64,${base64}`
 
@@ -84,12 +78,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
-        url: dataUrl,           // This is what gets saved to DB and rendered in <img src="...">
+        url: dataUrl,
         filename,
         originalName: file.name,
         size: file.size,
         type: file.type,
-        // Indicate storage method for debugging
         storage: 'data-url',
       },
     })
@@ -105,7 +98,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Helper: get extension from filename (inline to avoid importing 'path' just for this)
 function path_extname(name: string): string {
   const idx = name.lastIndexOf('.')
   return idx >= 0 ? name.substring(idx) : ''
@@ -129,9 +121,10 @@ function mimeToExt(mime: string): string {
 export async function GET() {
   return NextResponse.json({
     success: true,
-    message: 'Upload endpoint ready (base64 data URL mode). POST a file (multipart/form-data) with field "file".',
+    message: 'Upload endpoint ready (base64 data URL mode + compression support). POST a file (multipart/form-data) with field "file".',
     allowedTypes: ALLOWED_TYPES,
     maxSize: `${MAX_FILE_SIZE / 1024 / 1024}MB`,
     storage: 'data-url (no filesystem needed, works on Vercel)',
+    note: 'Frontend akan kompres gambar otomatis sebelum upload (lihat src/lib/compress-image.ts)',
   })
 }
