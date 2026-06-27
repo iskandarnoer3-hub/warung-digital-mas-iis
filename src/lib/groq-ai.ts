@@ -9,8 +9,6 @@
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions'
 
 // Model Groq yang reliable & cepat (production-grade)
-// llama-3.3-70b-versatile: kualitas terbaik, konteks 128k
-// Fallback ke llama-3.1-8b-instant: lebih cepat & murah
 const PRIMARY_MODEL = 'llama-3.3-70b-versatile'
 const FALLBACK_MODEL = 'llama-3.1-8b-instant'
 
@@ -30,7 +28,8 @@ export interface GroqChatOptions {
  * Cek apakah GROQ_API_KEY tersedia di environment
  */
 export function isGroqAvailable(): boolean {
-  return !!process.env.GROQ_API_KEY && process.env.GROQ_API_KEY.length > 10
+  const key = process.env.GROQ_API_KEY
+  return !!key && key.length > 10 && key.startsWith('gsk_')
 }
 
 /**
@@ -86,7 +85,7 @@ export async function callGroq(options: GroqChatOptions): Promise<string> {
         console.error(`[groq] ${currentModel} HTTP ${response.status}: ${errText.substring(0, 200)}`)
         lastError = new Error(`Groq API ${response.status}: ${errText.substring(0, 100)}`)
         // 429 = rate limit, 5xx = server error → coba model lain
-        // 401 = API key invalid → jangan coba model lain
+        // 401/403 = API key invalid → jangan coba model lain
         if (response.status === 401 || response.status === 403) {
           throw lastError
         }
@@ -113,12 +112,10 @@ export async function callGroq(options: GroqChatOptions): Promise<string> {
     } catch (err) {
       console.error(`[groq] ${currentModel} error:`, err instanceof Error ? err.message : err)
       lastError = err
-      // AbortError / network error → coba model lain
       continue
     }
   }
 
-  // Semua model gagal
   throw lastError instanceof Error
     ? lastError
     : new Error('All Groq models failed')
